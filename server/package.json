@@ -1,0 +1,34 @@
+{
+  "name": "moody-server",
+  "version": "1.0.0",
+  "description": "Moody Mental Health Companion — Express.js Backend",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "tsx --env-file=.env src/index.ts",
+    "build": "tsc",
+    "start": "node dist/src/index.js",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.2",
+    "@supabase/supabase-js": "^2.49.1",
+    "axios": "^1.8.3",
+    "cors": "^2.8.5",
+    "dotenv": "^17.3.1",
+    "drizzle-orm": "^0.45.1",
+    "express": "^5.2.1",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.15.17",
+    "@types/uuid": "^10.0.0",
+    "drizzle-kit": "^0.31.9",
+    "tsx": "^4.21.0",
+    "typescript": "^5.8.3"
+  }
+}
