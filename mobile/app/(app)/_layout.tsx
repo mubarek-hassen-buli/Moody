@@ -1,5 +1,5 @@
-import { Tabs, router } from 'expo-router';
-import { useEffect } from 'react';
+import { Tabs, Redirect } from 'expo-router';
+import { Text } from 'react-native';
 import { useUserStore } from '../../store/useUserStore';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -9,13 +9,10 @@ import { useUserStore } from '../../store/useUserStore';
 export default function AppLayout() {
   const isAuthenticated = useUserStore((s) => s.isAuthenticated);
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.replace('/(auth)/login');
-    }
-  }, [isAuthenticated]);
-
-  if (!isAuthenticated) return null;
+  // Declarative redirect for immediate auth guard
+  if (!isAuthenticated) {
+    return <Redirect href="/(auth)/login" />;
+  }
 
   return (
     <Tabs
@@ -79,6 +76,9 @@ export default function AppLayout() {
 
 // Simple emoji tab icon wrapper
 function TabIcon({ emoji, color }: { emoji: string; color: string }) {
-  const { Text } = require('react-native');
-  return <Text style={{ fontSize: 22, opacity: color === '#818cf8' ? 1 : 0.5 }}>{emoji}</Text>;
+  return (
+    <Text style={{ fontSize: 22, opacity: color === '#818cf8' ? 1 : 0.5 }}>
+      {emoji}
+    </Text>
+  );
 }
