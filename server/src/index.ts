@@ -73,9 +73,31 @@ app.use(
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`[server] Moody backend running on port ${PORT}`);
   console.log(`[server] Environment: ${process.env.NODE_ENV ?? 'development'}`);
+});
+
+// Surface port-in-use and other socket-level errors rather than
+// exiting silently with no output.
+server.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`[server] Port ${PORT} is already in use. Kill the other process first.`);
+  } else {
+    console.error('[server] Server error:', err.message);
+  }
+  process.exit(1);
+});
+
+// Catch any unhandled promise rejections (e.g. from async module init)
+// so they are logged rather than silently killing the process.
+process.on('unhandledRejection', (reason) => {
+  console.error('[server] Unhandled promise rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[server] Uncaught exception:', err.message);
+  process.exit(1);
 });
 
 export default app;
