@@ -34,11 +34,13 @@ router.post(
   rateLimiter,
   validateChatBody,
   async (req, res) => {
-    const { message, session_id, language } = req.body as {
+    const { message, session_id, language, mood_score } = req.body as {
       message: string;
       session_id: string;
       language: LanguageCode;
+      mood_score?: number | null;
     };
+
     const userId = req.user.id;
 
     try {
@@ -84,7 +86,8 @@ router.post(
       }
 
       // ── STEP 4: Build full conversation history with system prompt ─────────
-      const fullHistory = buildConversationHistory(language, trimmedHistory);
+      const fullHistory = buildConversationHistory(language, trimmedHistory, mood_score);
+
 
       // ── STEP 5: Call Addis AI ──────────────────────────────────────────────
       const aiResponse = await addisAiClient.chat({

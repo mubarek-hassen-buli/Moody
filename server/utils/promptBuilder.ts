@@ -155,19 +155,96 @@ export interface ConversationMessage {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Maps a numeric mood score (1–5) to a descriptive label per language.
+ */
+function moodLabel(score: number, language: LanguageCode): string {
+  const labels: Record<LanguageCode, string[]> = {
+    am: ['ከባድ ሀዘን', 'አስቸጋሪ ስሜት', 'ተራ ስሜት', 'ጥሩ ስሜት', 'በጣም ጥሩ ስሜት'],
+    om: ['gadda cimaa', 'rakkina', 'waan qabatamaa', 'gaarii', 'baay\'ee gaarii'],
+  };
+  return labels[language]?.[score - 1] ?? 'unknown';
+}
+
+/**
+ * Builds a mood-aware opening instruction injected as a system message.
+ * This tells the AI how to start the conversation based on the user's mood.
+ */
+function buildMoodContextMessage(
+  score: number,
+  language: LanguageCode
+): ConversationMessage {
+  const label = moodLabel(score, language);
+
+  const instructions: Record<LanguageCode, string> = {
+    am: score <= 2
+      ? `[MOOD CONTEXT — DO NOT REVEAL THIS TO THE USER]
+The user has indicated they are feeling "${label}" today (mood score: ${score}/5).
+Open the conversation with gentle acknowledgment of their mood.
+Example opening: "ዛሬ ስሜትህ/ሽ ትንሽ ከባድ ነው ይመስለኛል — ምን ሆነ? ልትነግረኝ ትፈልጋለህ/ሽ?"
+Maintain a soft, patient, and supportive tone throughout the entire conversation. 
+Do not mention the mood score — speak naturally as if you sensed it.`
+      : score === 3
+      ? `[MOOD CONTEXT — DO NOT REVEAL THIS TO THE USER]
+The user indicated a neutral mood today (mood score: ${score}/5).
+Open with a gentle check-in.
+Example opening: "ሰላም! ዛሬ እንዴት ነህ/ሽ? ምን አለ?"
+Keep the tone warm and open — let them guide the conversation.`
+      : `[MOOD CONTEXT — DO NOT REVEAL THIS TO THE USER]
+The user is feeling "${label}" today (mood score: ${score}/5).
+Open with warmth and positivity.
+Example opening: "ሰላም! ዛሬ ስሜትህ/ሽ ጥሩ ይመስላል። ምን ደስ የሚያሰኝ ነገር አለ?"
+Match their positive energy while staying available if they want to share anything.`,
+
+    om: score <= 2
+      ? `[MOOD CONTEXT — DO NOT REVEAL THIS TO THE USER]
+The user has indicated they are feeling "${label}" today (mood score: ${score}/5).
+Open with gentle acknowledgment.
+Example: "Har'a ciminaan si mudatee fakkaata — maal ta'e? Natti himuu barbaadda?"
+Maintain a soft, patient, supportive tone throughout.
+Do not mention the score — speak naturally.`
+      : score === 3
+      ? `[MOOD CONTEXT — DO NOT REVEAL THIS TO THE USER]
+The user indicated a neutral mood today (mood score: ${score}/5).
+Open gently: "Nagaa! Har'a akkam jirta? Maal jira?"
+Stay warm and open — let them lead.`
+      : `[MOOD CONTEXT — DO NOT REVEAL THIS TO THE USER]
+The user is feeling "${label}" today (mood score: ${score}/5).
+Open warmly: "Nagaa! Har'a natti mul'atta mi'aawaa jirta. Maal siifaa gaariidha?"
+Match their positive energy, stay available.`,
+  };
+
+  return {
+    role: 'system',
+    content: instructions[language] ?? instructions.am,
+  };
+}
+
+/**
  * Builds a complete conversation history array with the system prompt
- * prepended as the first message. This is injected server-side on every
- * request to Addis AI and never exposed to the client.
+ * prepended as the first message. Optionally injects a mood-aware context
+ * message when the user's daily mood score is available.
  */
 export function buildConversationHistory(
   language: LanguageCode,
-  trimmedHistory: ConversationMessage[]
+  trimmedHistory: ConversationMessage[],
+  moodScore?: number | null
 ): ConversationMessage[] {
   const systemMessage: ConversationMessage = {
     role: 'system',
     content: SYSTEM_PROMPTS[language] ?? SYSTEM_PROMPTS.am,
   };
-  return [systemMessage, ...trimmedHistory];
+
+  const base = [systemMessage, ...trimmedHistory];
+
+  // If a mood score is provided and this is the first user turn (no history yet),
+  // inject mood context so the AI's first response is mood-aware.
+  if (moodScore != null && moodScore >= 1 && moodScore <= 5) {
+    const moodMessage = buildMoodContextMessage(moodScore, language);
+    // Insert mood context right after the main system prompt
+    return [systemMessage, moodMessage, ...trimmedHistory];
+  }
+
+  return base;
 }
 
 /**

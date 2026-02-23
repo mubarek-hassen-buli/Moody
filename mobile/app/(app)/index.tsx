@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,28 +8,71 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import apiClient from '../../api/client';
 import { useUserStore } from '../../store/useUserStore';
+import { useSessionStore } from '../../store/useSessionStore';
 import MoodSelector from '../../components/MoodSelector';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HOME SCREEN — Daily mood check-in + navigation to chat/voice
+// CONSTANTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MOOD_STORAGE_KEY = '@moody/daily_mood';
+
+function getTodayDateString(): string {
+  return new Date().toISOString().split('T')[0]; // 'YYYY-MM-DD'
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HOME SCREEN — Daily mood check-in (once per day) + navigation to chat/voice
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
   const user = useUserStore((s) => s.user);
   const language = user?.preferredLanguage ?? 'am';
 
+  const { todayMood, moodDate, setTodayMood } = useSessionStore();
+
   const [selectedMood, setSelectedMood] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [todayLogged, setTodayLogged] = useState(false);
   const [gentleNudge, setGentleNudge] = useState(false);
 
+  // ── Check AsyncStorage on mount for today's saved mood ───────────────────
+  useEffect(() => {
+    async function restoreTodayMood() {
+      try {
+        const stored = await AsyncStorage.getItem(MOOD_STORAGE_KEY);
+        if (stored) {
+          const { score, date } = JSON.parse(stored) as {
+            score: number;
+            date: string;
+          };
+          if (date === getTodayDateString()) {
+            // Already logged today — restore into store
+            setTodayMood(score, date);
+          } else {
+            // New day — clear old entry
+            await AsyncStorage.removeItem(MOOD_STORAGE_KEY);
+          }
+        }
+      } catch {
+        // Non-critical if storage read fails
+      }
+    }
+    restoreTodayMood();
+  }, []);
+
+  // ── Already logged today — skip the check-in form ────────────────────────
+  const alreadyLoggedToday =
+    todayMood !== null && moodDate === getTodayDateString();
+
   // Greeting based on language
-  const greeting = language === 'am'
-    ? `ሰላም ${user?.displayName ?? ''}! እንዴት ነህ/ሽ ዛሬ?`
-    : `Nagaa ${user?.displayName ?? ''}! Har'a akkam jirta?`;
+  const greeting =
+    language === 'am'
+      ? `ሰላም ${user?.displayName ?? ''}! እንዴት ነህ/ሽ ዛሬ?`
+      : `Nagaa ${user?.displayName ?? ''}! Har'a akkam jirta?`;
 
   async function handleMoodSubmit() {
     if (selectedMood === null) {
@@ -44,16 +87,25 @@ export default function HomeScreen() {
 
     setIsSubmitting(true);
     try {
+      const today = getTodayDateString();
+
       const response = await apiClient.post('/api/mood', {
         mood_score: selectedMood,
         language,
       });
 
+      // Persist to AsyncStorage so it survives app restarts within the same day
+      await AsyncStorage.setItem(
+        MOOD_STORAGE_KEY,
+        JSON.stringify({ score: selectedMood, date: today })
+      );
+
+      // Update Zustand store
+      setTodayMood(selectedMood, today);
+
       if (response.data.gentle_nudge) {
         setGentleNudge(true);
       }
-
-      setTodayLogged(true);
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Error saving mood';
       Alert.alert('Error', msg);
@@ -71,10 +123,13 @@ export default function HomeScreen() {
       {/* Greeting */}
       <View style={styles.greetingSection}>
         <Text style={styles.greeting}>{greeting}</Text>
-        {language === 'am'
-          ? <Text style={styles.subGreeting}>ሚካ ዛሬ ጎናህ/ሽ ለማዋሬ ዝናዋለች</Text>
-          : <Text style={styles.subGreeting}>Araara har'a si cinaa jiraachuuf qophii dha</Text>
-        }
+        {language === 'am' ? (
+          <Text style={styles.subGreeting}>ሚካ ዛሬ ጎናህ/ሽ ለማዋሬ ዝናዋለች</Text>
+        ) : (
+          <Text style={styles.subGreeting}>
+            Araara har'a si cinaa jiraachuuf qophii dha
+          </Text>
+        )}
       </View>
 
       {/* Gentle Nudge Banner */}
@@ -89,17 +144,16 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Mood Check-in */}
-      {!todayLogged ? (
+      {/* Mood Check-in — only if not already done today */}
+      {!alreadyLoggedToday ? (
         <View style={styles.moodCard}>
           <Text style={styles.cardTitle}>
-            {language === 'am' ? '⚡ ዛሬ ስሜትህ/ሽ ምን ይመስላል?' : '⚡ Har\'a akkam jirta?'}
+            {language === 'am'
+              ? '⚡ ዛሬ ስሜትህ/ሽ ምን ይመስላል?'
+              : "⚡ Har'a akkam jirta?"}
           </Text>
 
-          <MoodSelector
-            selected={selectedMood}
-            onSelect={setSelectedMood}
-          />
+          <MoodSelector selected={selectedMood} onSelect={setSelectedMood} />
 
           <TouchableOpacity
             style={[
@@ -113,16 +167,26 @@ export default function HomeScreen() {
               <ActivityIndicator color="#fff" />
             ) : (
               <Text style={styles.submitText}>
-                {language === 'am' ? 'አስቀምጥ' : 'Kaa\'i'}
+                {language === 'am' ? 'አስቀምጥ' : "Kaa'i"}
               </Text>
             )}
           </TouchableOpacity>
         </View>
       ) : (
+        /* Already logged — show confirmation card with today's mood */
         <View style={styles.loggedCard}>
-          <Text style={styles.loggedEmoji}>✅</Text>
+          <Text style={styles.loggedEmoji}>
+            {['😢', '😕', '😐', '🙂', '😊'][todayMood! - 1]}
+          </Text>
           <Text style={styles.loggedText}>
-            {language === 'am' ? 'ዛሬ ስሜትህ/ሽ ተቀምጧል' : "Har'a mood kee kaawwame"}
+            {language === 'am'
+              ? 'ዛሬ ስሜትህ/ሽ ተቀምጧል'
+              : "Har'a mood kee kaawwame"}
+          </Text>
+          <Text style={styles.loggedSub}>
+            {language === 'am'
+              ? 'ነዋ! ሚካ ዝናዋለች'
+              : 'Gaarii! Araara qophii dha'}
           </Text>
         </View>
       )}
@@ -130,7 +194,9 @@ export default function HomeScreen() {
       {/* Quick actions */}
       <View style={styles.actionsSection}>
         <Text style={styles.sectionTitle}>
-          {language === 'am' ? 'ምን ማድረግ ትፈልጋለህ/ሽ?' : 'Maal gochuu barbaadda?'}
+          {language === 'am'
+            ? 'ምን ማድረግ ትፈልጋለህ/ሽ?'
+            : 'Maal gochuu barbaadda?'}
         </Text>
 
         <TouchableOpacity
@@ -143,7 +209,9 @@ export default function HomeScreen() {
               {language === 'am' ? 'ሚካ ጋር አውራ' : 'Araara wajjin haasofii'}
             </Text>
             <Text style={styles.actionSubtitle}>
-              {language === 'am' ? 'የጽሁፍ ውይይት ጀምር' : 'Barreessaan haasofuu jalqabi'}
+              {language === 'am'
+                ? 'የጽሁፍ ውይይት ጀምር'
+                : 'Barreessaan haasofuu jalqabi'}
             </Text>
           </View>
           <Text style={styles.actionArrow}>›</Text>
@@ -231,15 +299,20 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 28,
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   loggedEmoji: {
-    fontSize: 40,
+    fontSize: 44,
   },
   loggedText: {
     fontSize: 15,
+    fontWeight: '600',
     color: '#94a3b8',
     textAlign: 'center',
+  },
+  loggedSub: {
+    fontSize: 13,
+    color: '#475569',
   },
   actionsSection: {
     gap: 12,

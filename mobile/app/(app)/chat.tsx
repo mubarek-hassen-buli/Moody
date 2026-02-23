@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -40,17 +40,24 @@ export default function ChatScreen() {
     disableInput,
     clearSession,
     isLoading,
+    todayMood,
   } = useSessionStore();
+
 
   const [inputText, setInputText] = useState('');
   const listRef = useRef<FlatList>(null);
 
-  // Initialise session on mount if not already set
-  const activeSessionId = sessionId ?? (() => {
-    const id = uuidv4();
-    initSession(id, language);
-    return id;
-  })();
+  // Generate a stable session ID once (useRef so it never causes re-renders)
+  const sessionIdRef = useRef<string>(sessionId ?? uuidv4());
+  const activeSessionId = sessionIdRef.current;
+
+  // Initialise the Zustand session on mount — must NOT be called during render
+  useEffect(() => {
+    if (!sessionId) {
+      initSession(sessionIdRef.current, language);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── TanStack Query mutation for /api/chat ──────────────────────────────────
   const chatMutation = useMutation({
@@ -65,8 +72,17 @@ export default function ChatScreen() {
         message,
         session_id: sid,
         language,
+        // Pass today's mood so the AI can open with mood-aware empathy
+        mood_score: todayMood ?? undefined,
       });
-      return response.data;
+      return response.data as {
+        response_text: string;
+        escalation?: boolean;
+        tier?: number;
+        should_disable_input?: boolean;
+        session_id: string;
+        turn_count: number;
+      };
     },
     onMutate: ({ message }) => {
       // Optimistically add user message immediately
@@ -81,11 +97,15 @@ export default function ChatScreen() {
       setInputText('');
     },
     onSuccess: (data) => {
-      if (data.escalation) {
+      // Defensive extraction — guard against null/undefined response text
+      const aiText: string =
+        (data?.response_text as string | undefined)?.trim() ?? '';
+
+      if (data?.escalation) {
         const escalationMsg: ChatMessage = {
           id: uuidv4(),
           role: 'assistant',
-          content: data.response_text,
+          content: data.response_text ?? '',
           isEscalation: true,
           escalationTier: data.tier,
           shouldDisableInput: data.should_disable_input,
@@ -99,7 +119,8 @@ export default function ChatScreen() {
         const aiMsg: ChatMessage = {
           id: uuidv4(),
           role: 'assistant',
-          content: data.response_text,
+          // Always fall back to a placeholder if the server returned empty
+          content: aiText || (language === 'am' ? '...' : '...'),
           timestamp: Date.now(),
         };
         addMessage(aiMsg);
@@ -108,6 +129,7 @@ export default function ChatScreen() {
       // Scroll to bottom
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     },
+
     onError: (error: Error) => {
       setLoading(false);
       Alert.alert(
@@ -144,17 +166,24 @@ export default function ChatScreen() {
     return <ChatBubble message={item} />;
   };
 
-  const ListEmptyComponent = () => (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyEmoji}>🤍</Text>
-      <Text style={styles.emptyTitle}>{companionName}</Text>
-      <Text style={styles.emptySubtitle}>
-        {language === 'am'
-          ? 'ሰላም! ዛሬ ስሜትህ/ሽ እንዴት ነው? ለማዋሬ ዝናዋለሁ።'
-          : 'Nagaa! Har\'a akkam jirta? Si cina jiraachuuf qophii dha.'}
-      </Text>
-    </View>
-  );
+  const ListEmptyComponent = () => {
+    // Opening message adapts to whether the user logged a mood today
+    const openingText = todayMood != null
+      ? language === 'am'
+        ? 'ዛሬ ስሜትህ/ሽ ቀርቦ ነው። ይህን ዓውሬ ምን ማሳወቅ ትፈልጋለህ/ሽ?'
+        : "Har'a akkam akka jirtu naa ibsite. Maal natti himuu barbaadda?"
+      : language === 'am'
+        ? 'ሰላም! ዛሬ ስሜትህ/ሽ እንዴት ነው?'
+        : "Nagaa! Har'a akkam jirta?";
+
+    return (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyEmoji}>🤍</Text>
+        <Text style={styles.emptyTitle}>{companionName}</Text>
+        <Text style={styles.emptySubtitle}>{openingText}</Text>
+      </View>
+    );
+  };
 
   return (
     <KeyboardAvoidingView

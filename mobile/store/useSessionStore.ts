@@ -22,12 +22,17 @@ interface SessionStoreState {
   isInputDisabled: boolean;
   language: Language;
 
+  // Daily mood — persisted via AsyncStorage in the home screen
+  todayMood: number | null;  // 1–5 score for today
+  moodDate: string | null;   // ISO date string 'YYYY-MM-DD'
+
   // Actions
   initSession: (sessionId: string, language: Language) => void;
   addMessage: (message: ChatMessage) => void;
   setLoading: (isLoading: boolean) => void;
   disableInput: () => void;
   clearSession: () => void;
+  setTodayMood: (score: number, date: string) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -40,6 +45,8 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
   isLoading: false,
   isInputDisabled: false,
   language: 'am',
+  todayMood: null,
+  moodDate: null,
 
   initSession: (sessionId, language) =>
     set({
@@ -64,4 +71,7 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
       isLoading: false,
       isInputDisabled: false,
     }),
+
+  setTodayMood: (score, date) =>
+    set({ todayMood: score, moodDate: date }),
 }));
